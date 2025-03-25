@@ -29,6 +29,7 @@ DEFAULT_SEARCH_TOOL_DESC = (
     "'intitle:\"admin login\"', 'inurl:config.json'). Useful for finding specific "
     "file types, pages on specific sites, specific titles, or URLs containing specific strings."
 )
+ITERATION_LIMIT_MESSAGE = "Agent stopped due to iteration limit or time limit." # Used for checking output
 
 # --- Helper Functions ---
 
@@ -76,6 +77,7 @@ def run_search_sanitized(query: str, search_wrapper: GoogleSearchAPIWrapper) -> 
     """
     Strips leading/trailing whitespace AND removes double quotes (")
     before running the Google search to prevent API errors.
+    Returns search results or an error message string.
     """
     # Step 1: Remove leading/trailing whitespace (like newlines)
     sanitized_query = query.strip()
@@ -93,7 +95,8 @@ def run_search_sanitized(query: str, search_wrapper: GoogleSearchAPIWrapper) -> 
 
     try:
         # Execute the search using the underlying wrapper
-        return search_wrapper.run(sanitized_query)
+        results = search_wrapper.run(sanitized_query)
+        return results if results else "No results found for the query."
     except Exception as e:
         # Attempt to return a more informative error message to the agent
         error_detail = str(e)
@@ -103,6 +106,7 @@ def run_search_sanitized(query: str, search_wrapper: GoogleSearchAPIWrapper) -> 
              status_code = e.resp.status
         # Log the detailed error server-side for debugging if needed
         # print(f"ERROR during Google Search API call: Status {status_code} - {error_detail}")
+        # Return a formatted error message that the agent can potentially understand
         return f"Error during Google Search API call: Status {status_code} - {error_detail}"
 
 
@@ -126,28 +130,25 @@ with st.sidebar:
         help="Ensure the corresponding API key environment variable is set.",
     )
 
-    # Define model options for each provider
+    # Define model options for each provider (Expanded)
     model_options = {
         "Gemini": (
             "gemini-1.5-flash-latest",
             "gemini-1.5-pro-latest",
             "gemini-1.0-pro",
-            # "gemini-pro", # Older alias
         ),
         "Groq": (
-            "llama3-8b-8192",
-            "llama3-70b-8192",
-            "mixtral-8x7b-32768",
+            "llama3-8b-8192", # Fast general purpose
+            "llama3-70b-8192", # Powerful general purpose
+            "mixtral-8x7b-32768", # Large context window
             "gemma-7b-it",
-            "gemma2-9b-it", # Added newer model
+            "gemma2-9b-it",
         ),
         "Mistral": (
             "mistral-small-latest",
             "mistral-medium-latest",
             "mistral-large-latest",
-            "codestral-latest", # Added Codestral
-            # "open-mistral-7b", # May require different setup/API key
-            # "open-mixtral-8x7b", # May require different setup/API key
+            "codestral-latest", # Code focused
         ),
         # "OpenAI": ("gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"), # Uncomment if adding OpenAI
     }
@@ -156,11 +157,19 @@ with st.sidebar:
     model_name = st.selectbox(
         f"Choose {llm_provider} Model",
         options=model_options.get(llm_provider, ("default-model",)), # Get models or provide default
-        key=f"{llm_provider.lower()}_model_select" # Unique key per provider
+        key=f"{llm_provider.lower()}_model_select" # Unique key per provider ensures state retention
     )
 
-    # Agent Iteration Limit
-    max_iterations = st.slider("Max Agent Iterations", 1, 10, 5, key="max_iter_slider")
+    # Agent Iteration Limit Slider
+    # Set a reasonable default, max value, and current value
+    max_iterations = st.slider(
+        "Max Agent Iterations",
+        min_value=3,
+        max_value=15,
+        value=7, # Default increased slightly
+        key="max_iter_slider",
+        help="Maximum number of steps (LLM calls + Tool calls) the agent can take before stopping."
+        )
 
     # Display required environment variables (Informational)
     st.divider()
@@ -174,7 +183,7 @@ with st.sidebar:
     # Check if search keys are present for immediate feedback
     if not (os.getenv("GOOGLE_API_KEY") and os.getenv("GOOGLE_CSE_ID")):
          st.warning("⚠️ Google Search API Key or CSE ID missing!")
-    # Add similar check for SerpAPI if using it
+    # Add similar check for SerpAPI if using it as an alternative
 
 
 # --- Main UI Area ---
@@ -186,113 +195,124 @@ run_button = st.button("Run Agent")
 st.divider()
 # Create containers to clearly separate agent thinking from the final result
 st.subheader("🤔 Agent Thinking Process")
-thinking_container = st.container(border=True)
-st.subheader("✅ Final Result")
+thinking_container = st.container(border=True) # Added border for visual separation
+st.subheader("🏁 Final Result") # Changed header for clarity
 result_container = st.container()
 
 
 # --- Agent Execution Logic ---
 if run_button and query:
-    # 1. Validate API Keys (Primarily Search Tool keys needed upfront)
+    # 1. Validate Required Search API Keys (Essential upfront check)
     google_api_key = os.getenv("GOOGLE_API_KEY")
     google_cse_id = os.getenv("GOOGLE_CSE_ID")
     search_key_present = bool(google_api_key and google_cse_id)
-    # serpapi_key = os.getenv("SERPAPI_API_KEY") # Uncomment if using SerpAPI
-    # search_key_present = bool(serpapi_key) # Check for SerpAPI if using
-
-    # LLM Key presence is checked within get_llm function when initializing
+    # Adapt this check if using SerpAPI as an alternative or fallback
 
     if not search_key_present:
-        st.error("❌ Google Search API Key (`GOOGLE_API_KEY`) and/or CSE ID (`GOOGLE_CSE_ID`) missing from environment variables.")
-        st.stop() # Stop execution if search keys are missing
+        st.error("❌ Google Search API Key (`GOOGLE_API_KEY`) and/or CSE ID (`GOOGLE_CSE_ID`) missing from environment variables. Cannot proceed.")
+        st.stop() # Stop execution if essential search keys are missing
 
     # 2. Initialize LLM (using selected provider and model)
     llm = get_llm(llm_provider, model_name)
-    if not llm: # get_llm handles displaying error message in the UI
+    if not llm: # get_llm handles displaying error message in the UI if key is missing or init fails
         st.stop()
 
-    # 3. Initialize Tools and Agent within a try-except block
+    # 3. Initialize Tools and Agent within a try-except block for robustness
     try:
         # Setup Search Tool Wrapper
-        # Note: GoogleSearchAPIWrapper picks up GOOGLE_API_KEY and GOOGLE_CSE_ID automatically if set.
-        # Explicitly passing them is also possible:
         search_wrapper = GoogleSearchAPIWrapper(
-             google_api_key=google_api_key,
+             google_api_key=google_api_key, # Explicitly pass keys (optional, wrapper often picks them up)
              google_cse_id=google_cse_id
         )
-        # search_wrapper = SerpAPIWrapper(serpapi_api_key=serpapi_key) # Uncomment if using SerpAPI
+        # search_wrapper = SerpAPIWrapper(serpapi_api_key=os.getenv("SERPAPI_API_KEY")) # Example if using SerpAPI
 
         # Define the Google Search tool using the sanitizing function
         google_search_tool = Tool(
             name="Google Search with Dorks",
             description=DEFAULT_SEARCH_TOOL_DESC,
-            # Use a lambda to ensure the current search_wrapper instance is passed
+            # Use a lambda to ensure the current search_wrapper instance is passed correctly
             func=lambda q: run_search_sanitized(q, search_wrapper),
-            # Ensure the tool knows when errors occur during the API call
-            # return_direct=False, # Default, agent processes the result
-            # handle_tool_error=True, # Let agent know about tool errors (default can be okay)
+            # Configure how tool errors are handled (optional, defaults are often sufficient)
+            # return_direct=False, # Agent processes output (default)
+            # handle_tool_error=True, # Agent is informed about tool errors (default)
         )
-        tools = [google_search_tool]
+        tools = [google_search_tool] # List of tools agent can use
 
         # Pull the ReAct agent prompt template from Langchain Hub
         prompt = hub.pull("hwchase17/react")
 
-        # Create the agent (runnable)
+        # Create the agent (the core runnable logic)
         agent = create_react_agent(llm, tools, prompt)
 
         # Setup callback handler for displaying agent steps in Streamlit UI
         st_callback = StreamlitCallbackHandler(
-            thinking_container,
-            expand_new_thoughts=True, # Auto-expand new thoughts
+            thinking_container, # Target container for thoughts
+            expand_new_thoughts=True, # Auto-expand new thoughts for visibility
             collapse_completed_thoughts=False # Keep previous steps visible
             )
 
-        # Create the Agent Executor (handles the agent's run loop)
+        # Create the Agent Executor (manages the agent's execution loop)
         agent_executor = AgentExecutor(
             agent=agent,
             tools=tools,
-            verbose=True, # Required for callbacks to receive info
-            handle_parsing_errors=True, # Attempt to recover from LLM format errors
-            max_iterations=max_iterations,
+            verbose=True, # Must be True for callbacks to receive thought process data
+            handle_parsing_errors=True, # Attempt to recover from LLM output formatting errors
+            max_iterations=max_iterations, # Use the value from the slider
             callbacks=[st_callback], # Register the Streamlit callback handler
+            # Consider adding early stopping methods if needed for more complex scenarios
+            # early_stopping_method="generate", # LLM decides when to stop
         )
 
         # 4. Run the Agent and Display Results
         with thinking_container:
-             # Clear previous thinking process before new run
+             # Clear previous thinking process before a new run
              thinking_container.empty()
-             st.markdown(f"⏳ Running agent with **{llm_provider}** (`{model_name}`)...")
+             st.info(f"⏳ Running agent with **{llm_provider}** (`{model_name}`), Max Iterations: {max_iterations}...")
 
-        # Clear previous result before new run
+        # Clear previous result before a new run
         with result_container:
             result_container.empty()
 
-        response = None
-        error_message = None
+        response = None # Initialize response variable
+        agent_error_occurred = False # Flag to track if agent execution itself threw an error
+
         try:
             # Invoke the agent executor with the user's query
+            # This starts the Thought -> Action -> Observation -> Thought loop
             response = agent_executor.invoke(
                 {"input": query},
-                # Pass callbacks config again (good practice)
+                # Pass callbacks config again (recommended practice)
                 {"callbacks": [st_callback]}
             )
         except Exception as e:
             # Catch potential errors during the agent's execution loop
-            error_message = f"An error occurred during agent execution: {e}"
-            st.error(error_message) # Display runtime errors in the main UI
+            agent_error_occurred = True
+            st.error(f"❌ An error occurred during agent execution: {e}")
 
-        # Display final answer or status in the result container
+        # 5. Process and Display the Final Outcome in the Result Container
         with result_container:
-            if response and "output" in response:
-                st.success(f"{response['output']}") # Display final answer clearly
-            elif not error_message:
-                # Handle cases where the agent might finish without a specific 'output'
-                # (e.g., hit max iterations, couldn't find answer)
-                st.warning("Agent finished processing, but no final answer was explicitly provided.")
+            if agent_error_occurred:
+                # If invoke failed, we don't need to process 'response'
+                pass # Error already displayed by the except block
+            elif response and "output" in response:
+                agent_output = response['output']
+                # Check specifically for the iteration limit message in the output
+                if ITERATION_LIMIT_MESSAGE in agent_output:
+                     st.warning(f"⚠️ {ITERATION_LIMIT_MESSAGE}")
+                     st.info("The agent could not reach a final answer within the allowed steps. Consider increasing the 'Max Agent Iterations' slider in the sidebar, simplifying your query, or trying a different LLM model.")
+                else:
+                     # Success case: Agent provided a final answer
+                     st.success(agent_output)
+            else:
+                # Agent finished, but response structure is unexpected or 'output' is missing
+                # This *could* also happen if it hit the limit but didn't output the specific message.
+                st.warning("Agent finished processing, but no definitive final answer was provided.")
+                st.info("This might happen if the agent couldn't find the answer or hit the iteration limit without stating it explicitly. Try adjusting settings or the query.")
 
     except Exception as e:
-        # Catch errors during the setup of tools/agent components
+        # Catch errors during the setup of tools/agent/executor components
         st.error(f"❌ Failed to initialize agent components: {e}")
 
 elif run_button and not query:
+    # Handle case where run is clicked with no query input
     st.warning("⚠️ Please enter a query.")
