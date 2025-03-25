@@ -136,6 +136,11 @@ with st.sidebar:
             "gemini-1.5-flash-latest",
             "gemini-1.5-pro-latest",
             "gemini-1.0-pro",
+            "gemini-2.5-pro-exp-03-25",
+            "gemini-1.5-flash-8b",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+            
         ),
         "Groq": (
             "llama3-8b-8192", # Fast general purpose
