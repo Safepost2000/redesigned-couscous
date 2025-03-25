@@ -1,5 +1,5 @@
 streamlit
-langchain
+langchain>=0.1.0,<0.2.0  # Recommend pinning major Langchain versions
 langchain-google-genai
 langchain-groq
 langchain-mistralai
