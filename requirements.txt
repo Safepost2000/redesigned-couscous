@@ -1,5 +1,5 @@
 streamlit
-langchain>=0.1.0,<0.2.0  # Recommend pinning major Langchain versions
+langchain>=0.1.0,<0.2.0
 langchain-google-genai
 langchain-groq
 langchain-mistralai
@@ -8,4 +8,5 @@ langchainhub
 google-api-python-client
 google-search-results
 python-dotenv
+nest-asyncio  # <--- ADD THIS LINE
 # langchain-openai # Uncomment if adding OpenAI support
