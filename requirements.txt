@@ -1,0 +1,11 @@
+streamlit
+langchain
+langchain-google-genai
+langchain-groq
+langchain-mistralai
+langchain-community
+langchainhub
+google-api-python-client
+google-search-results
+python-dotenv
+# langchain-openai # Uncomment if adding OpenAI support
