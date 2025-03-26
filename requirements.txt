@@ -1,3 +1,4 @@
+duckduckgo-search
 faiss-cpu 
 pypdf
 streamlit
