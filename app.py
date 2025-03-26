@@ -11,7 +11,6 @@ from langchain.schema import StrOutputParser
 from langchain.vectorstores import FAISS
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.tools import Tool
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain import hub
 from langchain.agents import create_react_agent, AgentExecutor
@@ -19,7 +18,11 @@ from langchain.memory import ConversationBufferMemory
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnablePassthrough
 from langchain_community.callbacks import StreamlitCallbackHandler
-from langchain.tools import create_retriever_tool
+# Corrected import for create_retriever_tool
+try:
+    from langchain.tools.retriever import create_retriever_tool  # Newer versions
+except ImportError:
+    from langchain_core.tools import create_retriever_tool  # Older versions fallback
 
 # --- Configuration ---
 load_dotenv()
