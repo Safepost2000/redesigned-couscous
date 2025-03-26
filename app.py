@@ -31,14 +31,28 @@ MAX_UPLOAD_TEXT_CHARS = 150000
 
 @st.cache_resource(show_spinner="Loading and Indexing RBI Documents...")
 def load_and_index_docs(docs_path):
-    """Loads PDFs, splits them, creates embeddings, and builds a FAISS vector store."""
+    """
+    Loads PDFs, splits them, creates embeddings, and builds a FAISS vector store.
+
+    Args:
+        docs_path (str): Path to the directory containing RBI documents.
+
+    Returns:
+        langchain.chains.retrieval_qa.RetrievalQA: A retriever object if successful, None otherwise.
+    """
     all_docs = []
     if not os.path.exists(docs_path):
-        st.warning(f"Directory '{docs_path}' not found. No local RBI documents loaded.", icon="⚠️")
+        st.warning(
+            f"Directory '{docs_path}' not found. No local RBI documents loaded.",
+            icon="⚠️",
+        )
         return None
     pdf_files = glob.glob(os.path.join(docs_path, "*.pdf"))
     if not pdf_files:
-        st.warning(f"No PDF documents found in '{docs_path}'. The agent will lack specific RBI knowledge from local files.", icon="⚠️")
+        st.warning(
+            f"No PDF documents found in '{docs_path}'. The agent will lack specific RBI knowledge from local files.",
+            icon="⚠️",
+        )
         return None
 
     st.write(f"Found {len(pdf_files)} PDF(s) to load...")
@@ -54,7 +68,9 @@ def load_and_index_docs(docs_path):
             st.error(f"Error loading {os.path.basename(pdf_path)}: {e}")
 
     if not all_docs:
-        st.error("Failed to load any documents. Check PDF integrity or loading errors above.")
+        st.error(
+            "Failed to load any documents. Check PDF integrity or loading errors above."
+        )
         return None
 
     st.write("Splitting documents into manageable chunks...")
@@ -63,7 +79,9 @@ def load_and_index_docs(docs_path):
 
     st.write(f"Creating embeddings using Google Generative AI...")
     try:
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=GOOGLE_API_KEY)
+        embeddings = GoogleGenerativeAIEmbeddings(
+            model="models/embedding-001", google_api_key=GOOGLE_API_KEY
+        )
         vectorstore = FAISS.from_documents(splits, embeddings)
         st.write("Vector store created successfully.")
         return vectorstore.as_retriever(search_kwargs={"k": 5})
@@ -71,9 +89,18 @@ def load_and_index_docs(docs_path):
         st.error(f"Error creating embeddings or vector store: {e}")
         return None
 
+
 @st.cache_resource(show_spinner="Initializing Compliance Agent...")
 def initialize_agent(_retriever):
-    """Initializes the Langchain Agent with Gemini and tools."""
+    """
+    Initializes the Langchain Agent with Gemini and tools.
+
+    Args:
+        _retriever (langchain.chains.retrieval_qa.RetrievalQA): The retriever object.
+
+    Returns:
+        langchain.agents.agent.AgentExecutor: The initialized agent executor, None on error.
+    """
     try:
         llm = ChatGoogleGenerativeAI(
             model="gemini-1.5-flash-latest", temperature=0.3, google_api_key=GOOGLE_API_KEY
@@ -142,7 +169,10 @@ def initialize_agent(_retriever):
         agent = create_react_agent(llm, tools, prompt)
 
         memory = ConversationBufferMemory(
-            memory_key="chat_history", return_messages=True, input_key='input', output_key='output'
+            memory_key="chat_history",
+            return_messages=True,
+            input_key="input",
+            output_key="output",
         )
 
         agent_executor = AgentExecutor(
@@ -161,7 +191,15 @@ def initialize_agent(_retriever):
 
 
 def process_uploaded_pdf(uploaded_file):
-    """Loads, splits, and extracts text from an uploaded PDF file."""
+    """
+    Loads, splits, and extracts text from an uploaded PDF file.
+
+    Args:
+        uploaded_file (UploadedFile): The uploaded PDF file.
+
+    Returns:
+        str: The extracted text from the PDF, truncated to MAX_UPLOAD_TEXT_CHARS, or None on error.
+    """
     if uploaded_file is None:
         return None
     try:
@@ -213,7 +251,11 @@ with st.sidebar:
     )
     if st.button("🔄 Reload Knowledge Base & Agent"):
         st.cache_resource.clear()
-        st.session_state.messages = [AIMessage(content="Hello! I am your RBI Compliance Assistant. Upload internal documents via the sidebar or ask me about RBI regulations.")]
+        st.session_state.messages = [
+            AIMessage(
+                content="Hello! I am your RBI Compliance Assistant. Upload internal documents via the sidebar or ask me about RBI regulations."
+            )
+        ]
         st.session_state.uploaded_doc_text = None
         st.session_state.current_upload_filename = None
         st.success("Knowledge base and agent will be re-initialized. Chat cleared.")
@@ -348,4 +390,3 @@ if prompt := st.chat_input("Ask about RBI rules, analyze uploaded doc, check com
     #     st.session_state.uploaded_doc_text = None
     #     st.session_state.current_upload_filename = None
     #     st.rerun()
-    
