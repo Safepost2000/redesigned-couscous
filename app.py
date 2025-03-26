@@ -18,6 +18,8 @@ from langchain.memory import ConversationBufferMemory
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnablePassthrough
 from langchain_community.callbacks import StreamlitCallbackHandler
+from langchain_core.tools import Tool
+
 # Corrected import for create_retriever_tool
 try:
     from langchain.tools.retriever import create_retriever_tool  # Newer versions
@@ -215,9 +217,10 @@ with st.sidebar:
     st.info("Upload RBI PDFs here. Reload required after changes.")
     if st.button("🔄 Reload Knowledge Base & Agent"):
         st.cache_resource.clear()
-        st.session_state.messages = [
-            AIMessage(content="Hello! I am your RBI Compliance Assistant.")
-        ]
+        if 'messages' in st.session_state:  # Check if the key exists
+            st.session_state.messages = [
+                AIMessage(content="Hello! I am your RBI Compliance Assistant.")
+            ]
         st.session_state.uploaded_doc_text = None
         st.session_state.current_upload_filename = None
         st.success("Knowledge base and agent re-initialized. Chat cleared.")
@@ -316,3 +319,4 @@ if prompt := st.chat_input("Ask about RBI rules, analyze uploaded doc..."):
         message_placeholder.markdown(full_response)
 
     st.session_state.messages.append(AIMessage(content=full_response))
+
