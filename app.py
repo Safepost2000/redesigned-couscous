@@ -4,12 +4,13 @@ import glob
 import tempfile
 from dotenv import load_dotenv
 from io import BytesIO
+import asyncio  # Import asyncio
 
 # Langchain components
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain.prompts import PromptTemplate
 from langchain.schema import StrOutputParser
-from langchain.vectorstores import FAISS # Changed this line
+from langchain.vectorstores import FAISS
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.tools import Tool
@@ -41,12 +42,28 @@ def load_and_index_docs(docs_path):
         langchain.chains.retrieval_qa.RetrievalQA: A retriever object if successful, None otherwise.
     """
     all_docs = []
+    # Create the directory if it doesn't exist
     if not os.path.exists(docs_path):
+        try:
+            os.makedirs(docs_path)
+            st.warning(
+                f"Directory '{docs_path}' created.  Please add RBI documents to this directory.",
+                icon="⚠️",
+            )
+        except Exception as e:
+            st.error(
+                f"Error creating directory '{docs_path}': {e}.  Please ensure the application has write permissions.",
+                icon="🚨",
+            )
+            return None
+
+    if not os.path.exists(docs_path):  # Check again after trying to create
         st.warning(
             f"Directory '{docs_path}' not found. No local RBI documents loaded.",
             icon="⚠️",
         )
         return None
+
     pdf_files = glob.glob(os.path.join(docs_path, "*.pdf"))
     if not pdf_files:
         st.warning(
@@ -89,7 +106,6 @@ def load_and_index_docs(docs_path):
         st.error(f"Error creating embeddings or vector store: {e}")
         return None
 
-
 @st.cache_resource(show_spinner="Initializing Compliance Agent...")
 def initialize_agent(_retriever):
     """
@@ -102,6 +118,12 @@ def initialize_agent(_retriever):
         langchain.agents.agent.AgentExecutor: The initialized agent executor, None on error.
     """
     try:
+        # Check if an event loop is already set; if not, create one.
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+
         llm = ChatGoogleGenerativeAI(
             model="gemini-1.5-flash-latest", temperature=0.3, google_api_key=GOOGLE_API_KEY
         )
@@ -390,3 +412,4 @@ if prompt := st.chat_input("Ask about RBI rules, analyze uploaded doc, check com
     #     st.session_state.uploaded_doc_text = None
     #     st.session_state.current_upload_filename = None
     #     st.rerun()
+
