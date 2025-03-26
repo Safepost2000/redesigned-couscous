@@ -9,7 +9,7 @@ from io import BytesIO
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain.prompts import PromptTemplate
 from langchain.schema import StrOutputParser
-from langchain_community.vectorstore import FAISS
+from langchain.vectorstores import FAISS # Changed this line
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.tools import Tool
