@@ -1,3 +1,5 @@
+faiss-cpu 
+pypdf
 streamlit
 langchain>=0.1.0,<0.2.0
 langchain-google-genai
@@ -10,3 +12,4 @@ google-search-results
 python-dotenv
 nest-asyncio  # <--- ADD THIS LINE
 # langchain-openai # Uncomment if adding OpenAI support
+google-generativeai
